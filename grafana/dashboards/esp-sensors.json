@@ -1,0 +1,152 @@
+{
+  "id": null,
+  "uid": "blueos-esp-sensors",
+  "title": "BlueOS ESP Sensors",
+  "description": "Auto-provisioned: WiFi RSSI, RTC temperature, relay history and device status for ESPHome nodes publishing under blueos/# via Telegraf -> InfluxDB 1.8 (esphome DB).",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "timezone": "browser",
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "30s",
+  "tags": ["blueos", "esphome", "site-ui"],
+  "templating": {
+    "list": [
+      {
+        "name": "topic_root",
+        "label": "Device root",
+        "type": "textbox",
+        "query": "blueos/relay",
+        "current": { "text": "blueos/relay", "value": "blueos/relay" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "WiFi RSSI (dBm)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "influxdb", "uid": "esphome_influxdb" },
+      "fieldConfig": {
+        "defaults": { "unit": "dBm", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 } },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": { "type": "influxdb", "uid": "esphome_influxdb" },
+          "query": "SELECT \"value\" FROM \"esphome_sensor\" WHERE (\"topic\" =~ /^$topic_root\\/sensor\\/wifi_signal\\/state$/) AND $timeFilter",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "alias": "RSSI"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "RTC Temperature (\u00b0C)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "influxdb", "uid": "esphome_influxdb" },
+      "fieldConfig": {
+        "defaults": { "unit": "celsius", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 } },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": { "type": "influxdb", "uid": "esphome_influxdb" },
+          "query": "SELECT \"value\" FROM \"esphome_sensor\" WHERE (\"topic\" =~ /^$topic_root\\/sensor\\/rtc_temperature\\/state$/) AND $timeFilter",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "alias": "RTC Temp"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Relay States (history)",
+      "type": "state-timeline",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+      "datasource": { "type": "influxdb", "uid": "esphome_influxdb" },
+      "options": { "mergeValues": true, "showValue": "auto", "rowHeight": 0.7 },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "ON": { "color": "green", "index": 0, "text": "ON" }, "OFF": { "color": "red", "index": 1, "text": "OFF" } } }
+          ]
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": { "type": "influxdb", "uid": "esphome_influxdb" },
+          "query": "SELECT \"value\" FROM \"esphome_switch\" WHERE (\"topic\" =~ /^$topic_root\\/switch\\/relay_[0-9]+\\/state$/) AND $timeFilter GROUP BY \"topic\"",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "alias": "$tag_topic"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Uptime (s)",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 16 },
+      "datasource": { "type": "influxdb", "uid": "esphome_influxdb" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
+      "targets": [
+        {
+          "datasource": { "type": "influxdb", "uid": "esphome_influxdb" },
+          "query": "SELECT last(\"value\") FROM \"esphome_sensor\" WHERE (\"topic\" =~ /^$topic_root\\/sensor\\/uptime\\/state$/) AND $timeFilter",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "alias": "Uptime"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Device Status (birth/LWT)",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 16 },
+      "datasource": { "type": "influxdb", "uid": "esphome_influxdb" },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "online": { "color": "green", "text": "ONLINE" }, "offline": { "color": "red", "text": "OFFLINE" } } }
+          ]
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "value" },
+      "targets": [
+        {
+          "datasource": { "type": "influxdb", "uid": "esphome_influxdb" },
+          "query": "SELECT last(\"value\") FROM \"esphome_status\" WHERE (\"topic\" =~ /^$topic_root\\/status$/) AND $timeFilter",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "alias": "Status"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Last RTC Temperature",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 16 },
+      "datasource": { "type": "influxdb", "uid": "esphome_influxdb" },
+      "fieldConfig": { "defaults": { "unit": "celsius" }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
+      "targets": [
+        {
+          "datasource": { "type": "influxdb", "uid": "esphome_influxdb" },
+          "query": "SELECT last(\"value\") FROM \"esphome_sensor\" WHERE (\"topic\" =~ /^$topic_root\\/sensor\\/rtc_temperature\\/state$/) AND $timeFilter",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "alias": "RTC Temp"
+        }
+      ]
+    }
+  ]
+}

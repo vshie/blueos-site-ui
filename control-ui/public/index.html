@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BlueOS Site Control</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-dot"></span>
+      <h1>BlueOS Site Control</h1>
+    </div>
+    <div class="topbar-actions">
+      <span id="mqtt-status" class="pill pill-unknown">MQTT: connecting…</span>
+      <a id="grafana-link" class="btn btn-secondary" href="#" target="_blank" rel="noopener">Open Grafana ↗</a>
+    </div>
+  </header>
+
+  <main id="app">
+    <p id="empty-state" class="empty-state" hidden>
+      No devices discovered yet. Make sure the ESP is powered and publishing to
+      <code>blueos/#</code> on this broker, then this page will populate automatically.
+    </p>
+    <div id="devices"></div>
+  </main>
+
+  <footer class="footer">
+    <span>blueos-site-ui · Grafana = trends, this page = switches &amp; device actions (HA-style, no add-on required)</span>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

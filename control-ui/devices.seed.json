@@ -1,0 +1,24 @@
+{
+  "relay": {
+    "displayName": "BlueOS Relay (blueos-relay)",
+    "entities": [
+      { "domain": "switch", "object_id": "relay_1", "name": "Relay 1" },
+      { "domain": "switch", "object_id": "relay_2", "name": "Relay 2" },
+      { "domain": "switch", "object_id": "relay_3", "name": "Relay 3" },
+      { "domain": "switch", "object_id": "relay_4", "name": "Relay 4" },
+      { "domain": "switch", "object_id": "relay_5", "name": "Relay 5" },
+      { "domain": "switch", "object_id": "relay_6", "name": "Relay 6" },
+      { "domain": "switch", "object_id": "buzzer_beep", "name": "Buzzer Beep", "momentary": true, "icon": "sound" },
+      { "domain": "switch", "object_id": "rtc_sync_now", "name": "RTC Sync Now (NTP \u2192 DS3231)", "momentary": true, "icon": "clock" },
+      { "domain": "sensor", "object_id": "rtc_temperature", "name": "RTC Temperature", "unit": "\u00b0C" },
+      { "domain": "sensor", "object_id": "wifi_signal", "name": "WiFi Signal", "unit": "dBm" },
+      { "domain": "sensor", "object_id": "uptime", "name": "Uptime", "unit": "s" },
+      { "domain": "binary_sensor", "object_id": "status", "name": "Status" },
+      { "domain": "binary_sensor", "object_id": "boot_button", "name": "Boot Button" },
+      { "domain": "text_sensor", "object_id": "firmware_version", "name": "Firmware Version" },
+      { "domain": "text_sensor", "object_id": "ip_address", "name": "IP Address" },
+      { "domain": "text_sensor", "object_id": "connected_ssid", "name": "Connected SSID" },
+      { "domain": "text_sensor", "object_id": "mac_address", "name": "MAC Address" }
+    ]
+  }
+}

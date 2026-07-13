@@ -1,0 +1,28 @@
+name: Build and push BlueOS extension
+
+on:
+  push:
+    branches: [main]
+    tags: ['*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build and push (Pi3/Pi4 armv7 + Pi4/Pi5 arm64 + amd64)
+        uses: BlueOS-community/Deploy-BlueOS-Extension@v1.2.0
+        with:
+          docker-username: ${{ secrets.DOCKER_USERNAME }}
+          docker-password: ${{ secrets.DOCKER_PASSWORD }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          build-platforms: linux/arm/v7,linux/arm64/v8,linux/amd64
+          image-name: site-ui
+          image-prefix: blueos-
+          author: Tony White
+          author-email: tony@bluerobotics.com
+          maintainer: Tony White
+          maintainer-email: tony@bluerobotics.com

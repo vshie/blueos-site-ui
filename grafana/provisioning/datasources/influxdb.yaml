@@ -1,0 +1,17 @@
+# Provisioned InfluxQL datasource — BlueOS site-stack InfluxDB 1.8.
+# host.docker.internal resolves via the container's ExtraHosts (host-gateway).
+apiVersion: 1
+
+datasources:
+  - name: esphome
+    uid: esphome_influxdb
+    type: influxdb
+    access: proxy
+    url: http://host.docker.internal:8086
+    database: esphome
+    isDefault: true
+    jsonData:
+      httpMode: GET
+      keepCookies: []
+    version: 1
+    editable: true
