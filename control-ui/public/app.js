@@ -6,13 +6,29 @@
   const grafanaLinkEl = document.getElementById("grafana-link");
   const grafanaFrameEl = document.getElementById("grafana-frame");
 
+  // BlueOS serves us under /extensionv2/<name>/ — absolute "/api/…" hits core and 404s.
+  function extBase() {
+    const path = location.pathname;
+    const m = path.match(/^(.*?\/extensionv2\/[^/]+\/)/);
+    if (m) return m[1];
+    if (path.endsWith("/")) return path;
+    if (/\.[a-zA-Z0-9]+$/.test(path.split("/").pop() || "")) {
+      return path.replace(/\/[^/]*$/, "/");
+    }
+    return path + "/";
+  }
+  const BASE = extBase();
+  function api(path) {
+    return BASE + String(path).replace(/^\//, "");
+  }
+
   let state = {};
   let schedules = {};
 
   const DAY_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
   const DEFAULT_SCHEDULE = { enabled: false, on: "06:00", off: "18:00", days: "1111111" };
 
-  fetch("/api/health")
+  fetch(api("api/health"))
     .then((r) => r.json())
     .then((h) => {
       const port = h.grafanaPort || "3000";
@@ -23,7 +39,7 @@
     })
     .catch(() => {});
 
-  fetch("/api/schedule")
+  fetch(api("api/schedule"))
     .then((r) => r.json())
     .then((s) => {
       schedules = s || {};
@@ -88,7 +104,7 @@
 
   function sendCommand(device, domain, object_id, payload, btnEl) {
     if (btnEl) btnEl.disabled = true;
-    fetch("/api/command", {
+    fetch(api("api/command"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ device, domain, object_id, payload }),
@@ -171,7 +187,7 @@
 
   function sendSchedule(device, objectId, patch, formEl) {
     if (formEl) formEl.classList.add("saving");
-    fetch("/api/schedule", {
+    fetch(api("api/schedule"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ device, object_id: objectId, ...patch }),
@@ -312,7 +328,7 @@
 
   function connectWs() {
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    const ws = new WebSocket(`${proto}://${location.host}/ws`);
+    const ws = new WebSocket(`${proto}://${location.host}${BASE}ws`);
 
     ws.onopen = () => setMqttStatus(null);
 
@@ -349,7 +365,7 @@
   }
 
   function pollFallback() {
-    fetch("/api/state")
+    fetch(api("api/state"))
       .then((r) => r.json())
       .then((s) => {
         state = s;
@@ -358,7 +374,7 @@
       .catch(() => {});
   }
 
-  fetch("/api/state")
+  fetch(api("api/state"))
     .then((r) => r.json())
     .then((s) => {
       state = s;

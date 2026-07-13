@@ -56,7 +56,7 @@ ENV GF_SERVER_HTTP_PORT=3000 \
 
 EXPOSE 80/tcp 3000/tcp
 
-LABEL version="0.3.0"
+LABEL version="0.3.1"
 LABEL type="other"
 LABEL tags='["grafana","mqtt","esphome","control","relay","dashboard","home-automation"]'
 LABEL requirements="core >= 1.1"
