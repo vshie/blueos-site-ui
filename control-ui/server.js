@@ -290,6 +290,24 @@ client.on("message", (topic, payloadBuf) => {
 // ---- HTTP + WebSocket ----
 const app = express();
 app.use(express.json());
+
+// BlueOS sidebar registration — must be served by the extension HTTP server:
+// https://blueos.cloud/docs/latest/development/extensions/#web-interface-http-server
+app.get("/register_service", (req, res) => {
+  res.json({
+    name: "Site UI",
+    description:
+      "Relay controls, RTC/NTP status, schedule editor, and embedded Grafana graphs for BlueOS site devices.",
+    icon: "mdi-toggle-switch",
+    company: "Community",
+    version: "0.2.1",
+    webpage: "https://github.com/vshie/blueos-site-ui",
+    api: "https://github.com/vshie/blueos-site-ui/blob/main/README.md",
+    new_page: false,
+    works_in_relative_paths: true,
+  });
+});
+
 app.use(express.static(path.join(__dirname, "public")));
 
 app.get("/api/health", (req, res) => {
