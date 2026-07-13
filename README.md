@@ -24,7 +24,10 @@ ESPHome node (blueos-relay)  --MQTT-->  Mosquitto (site-stack, :1883)
 ```
 
 Grafana = graphs. This control page = switches + device actions. See
-`PLAN.md` (workstation repo `BlueOS-HA-node`) milestone **M4**.
+`PLAN.md` (workstation repo `BlueOS-HA-node`) milestone **M4**. The control
+HTTP server exposes `/register_service` so **Site UI** appears in the BlueOS
+sidebar
+([docs](https://blueos.cloud/docs/latest/development/extensions/#web-interface-http-server)).
 
 ## What's inside
 
