@@ -33,32 +33,32 @@
 
   function setMqttStatus(connected) {
     if (connected === true) {
-      mqttStatusEl.textContent = "MQTT: connected";
+      mqttStatusEl.textContent = "Mailbox: connected";
       mqttStatusEl.className = "pill pill-ok";
     } else if (connected === false) {
-      mqttStatusEl.textContent = "MQTT: disconnected";
+      mqttStatusEl.textContent = "Mailbox: disconnected";
       mqttStatusEl.className = "pill pill-bad";
     } else {
-      mqttStatusEl.textContent = "MQTT: connecting…";
+      mqttStatusEl.textContent = "Mailbox: connecting…";
       mqttStatusEl.className = "pill pill-unknown";
     }
   }
 
   function setTimeStatus(status) {
     if (!status || !status.time_source) {
-      timeStatusEl.textContent = "Time: unknown";
+      timeStatusEl.textContent = "Clock: unknown";
       timeStatusEl.className = "pill pill-unknown";
       return;
     }
     const labels = {
-      ntp: "Time: NTP",
-      "esp-rtc": "Time: ESP RTC",
-      "esp-rtc-ok": "Time: ESP RTC",
-      "esp-rtc-correcting": "Time: syncing from RTC…",
-      "esp-rtc-stale": "Time: RTC stale",
-      unknown: "Time: unknown",
+      ntp: "Clock: internet",
+      "esp-rtc": "Clock: ESP board",
+      "esp-rtc-ok": "Clock: ESP board",
+      "esp-rtc-correcting": "Clock: syncing…",
+      "esp-rtc-stale": "Clock: ESP stale",
+      unknown: "Clock: unknown",
     };
-    timeStatusEl.textContent = labels[status.time_source] || `Time: ${status.time_source}`;
+    timeStatusEl.textContent = labels[status.time_source] || `Clock: ${status.time_source}`;
     if (status.time_source === "ntp" || status.time_source === "esp-rtc" || status.time_source === "esp-rtc-ok") {
       timeStatusEl.className = "pill pill-ok";
     } else if (status.time_source === "esp-rtc-stale" || status.time_source === "unknown") {
@@ -282,7 +282,7 @@
         schedSection.className = "schedule-section";
         const schedHeader = document.createElement("div");
         schedHeader.className = "schedule-section-header";
-        schedHeader.textContent = "Schedule (daily on/off, edge-triggered — manual overrides between times are kept)";
+        schedHeader.textContent = "Daily schedule — uses the board’s clock; manual switch flips still work until the next on/off time";
         schedSection.appendChild(schedHeader);
         for (const ent of scheduledSwitches) {
           schedSection.appendChild(renderScheduleRow(dev.device, ent));

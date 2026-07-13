@@ -295,12 +295,12 @@ app.use(express.json());
 // https://blueos.cloud/docs/latest/development/extensions/#web-interface-http-server
 app.get("/register_service", (req, res) => {
   res.json({
-    name: "Site UI",
+    name: "Site Controls",
     description:
-      "Relay controls, RTC/NTP status, schedule editor, and embedded Grafana graphs for BlueOS site devices.",
+      "Turn relays on/off, set daily schedules, and watch trends from your ESP boards.",
     icon: "mdi-toggle-switch",
     company: "Community",
-    version: "0.2.1",
+    version: "0.3.0",
     webpage: "https://github.com/vshie/blueos-site-ui",
     api: "https://github.com/vshie/blueos-site-ui/blob/main/README.md",
     new_page: false,
