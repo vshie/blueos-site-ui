@@ -11,14 +11,16 @@
       { "domain": "switch", "object_id": "buzzer_beep", "name": "Buzzer Beep", "momentary": true, "icon": "sound" },
       { "domain": "switch", "object_id": "rtc_sync_now", "name": "RTC Sync Now (NTP \u2192 DS3231)", "momentary": true, "icon": "clock" },
       { "domain": "sensor", "object_id": "rtc_temperature", "name": "RTC Temperature", "unit": "\u00b0C" },
+      { "domain": "sensor", "object_id": "rtc_epoch", "name": "RTC Epoch", "unit": "s" },
       { "domain": "sensor", "object_id": "wifi_signal", "name": "WiFi Signal", "unit": "dBm" },
       { "domain": "sensor", "object_id": "uptime", "name": "Uptime", "unit": "s" },
       { "domain": "binary_sensor", "object_id": "status", "name": "Status" },
       { "domain": "binary_sensor", "object_id": "boot_button", "name": "Boot Button" },
-      { "domain": "text_sensor", "object_id": "firmware_version", "name": "Firmware Version" },
-      { "domain": "text_sensor", "object_id": "ip_address", "name": "IP Address" },
-      { "domain": "text_sensor", "object_id": "connected_ssid", "name": "Connected SSID" },
-      { "domain": "text_sensor", "object_id": "mac_address", "name": "MAC Address" }
+      { "domain": "sensor", "object_id": "rtc_datetime", "name": "RTC DateTime", "icon": "clock" },
+      { "domain": "sensor", "object_id": "firmware_version", "name": "Firmware Version" },
+      { "domain": "sensor", "object_id": "ip_address", "name": "IP Address" },
+      { "domain": "sensor", "object_id": "connected_ssid", "name": "Connected SSID" },
+      { "domain": "sensor", "object_id": "mac_address", "name": "MAC Address" }
     ]
   }
 }

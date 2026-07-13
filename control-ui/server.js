@@ -48,6 +48,14 @@ const STATE_TOPIC_RE = new RegExp(
   `^${escapeRegExp(MQTT_ROOT)}\\/(.+)\\/(${DOMAIN_ALTERNATION})\\/([^/]+)\\/state$`
 );
 const AVAILABILITY_TOPIC_RE = new RegExp(`^${escapeRegExp(MQTT_ROOT)}\\/(.+)\\/status$`);
+// Relay schedule config channel (see blueos-site-esphome's "MQTT schedule
+// schema" docs): blueos/<device>/schedule/<object_id>/state|set, JSON body
+// {"enabled":bool,"on":"HH:MM","off":"HH:MM","days":"SMTWTFS"}.
+const SCHEDULE_STATE_TOPIC_RE = new RegExp(`^${escapeRegExp(MQTT_ROOT)}\\/(.+)\\/schedule\\/([^/]+)\\/state$`);
+// Time-from-RTC sidecar status (blueos-site-stack), see its README.
+const TIME_STATUS_TOPIC = `${MQTT_ROOT}/ext/site-stack/json`;
+const HHMM_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
+const DAYS_RE = /^[01]{7}$/;
 
 function escapeRegExp(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -70,6 +78,39 @@ function isMomentary(objectId, name) {
 
 // ---- Registry: device -> { displayName, online, lastSeen, entities: { key -> entity } }
 const registry = new Map();
+
+// ---- Schedule registry: "device/object_id" -> {enabled, on, off, days, lastUpdate}
+const scheduleRegistry = new Map();
+let timeStatus = null; // latest parsed payload from blueos/ext/site-stack/json
+let timeStatusUpdated = null;
+
+function applyScheduleMessage(deviceKey, objectId, payload) {
+  let parsed;
+  try {
+    parsed = JSON.parse(payload);
+  } catch {
+    return;
+  }
+  const key = `${deviceKey}/${objectId}`;
+  scheduleRegistry.set(key, {
+    device: deviceKey,
+    object_id: objectId,
+    enabled: !!parsed.enabled,
+    on: typeof parsed.on === "string" ? parsed.on : "06:00",
+    off: typeof parsed.off === "string" ? parsed.off : "18:00",
+    days: typeof parsed.days === "string" && DAYS_RE.test(parsed.days) ? parsed.days : "1111111",
+    lastUpdate: Date.now(),
+  });
+}
+
+function serializeSchedules() {
+  const out = {};
+  for (const [, sc] of scheduleRegistry.entries()) {
+    out[sc.device] = out[sc.device] || {};
+    out[sc.device][sc.object_id] = sc;
+  }
+  return out;
+}
 
 function getOrCreateDevice(deviceKey) {
   if (!registry.has(deviceKey)) {
@@ -205,6 +246,26 @@ client.on("error", (err) => {
 
 client.on("message", (topic, payloadBuf) => {
   const payload = payloadBuf.toString();
+
+  if (topic === TIME_STATUS_TOPIC) {
+    try {
+      timeStatus = JSON.parse(payload);
+      timeStatusUpdated = Date.now();
+      broadcast({ type: "time_status", status: timeStatus, updated: timeStatusUpdated });
+    } catch {
+      // ignore malformed status payloads
+    }
+    return;
+  }
+
+  const scheduleMatch = topic.match(SCHEDULE_STATE_TOPIC_RE);
+  if (scheduleMatch) {
+    const [, deviceKey, objectId] = scheduleMatch;
+    applyScheduleMessage(deviceKey, objectId, payload);
+    broadcast({ type: "schedule_update", device: deviceKey, object_id: objectId, schedule: scheduleRegistry.get(`${deviceKey}/${objectId}`) });
+    return;
+  }
+
   const stateMatch = topic.match(STATE_TOPIC_RE);
   if (stateMatch) {
     const [, deviceKey, domain, objectId] = stateMatch;
@@ -232,11 +293,55 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
 app.get("/api/health", (req, res) => {
-  res.json({ ok: true, mqttConnected, mqttUrl, mqttRoot: MQTT_ROOT, grafanaPort: GRAFANA_PORT });
+  res.json({
+    ok: true,
+    mqttConnected,
+    mqttUrl,
+    mqttRoot: MQTT_ROOT,
+    grafanaPort: GRAFANA_PORT,
+    timeStatus,
+    timeStatusUpdated,
+  });
 });
 
 app.get("/api/state", (req, res) => {
   res.json(serializeRegistry());
+});
+
+app.get("/api/schedule", (req, res) => {
+  res.json(serializeSchedules());
+});
+
+app.post("/api/schedule", (req, res) => {
+  const { device, object_id, enabled, on, off, days } = req.body || {};
+  if (!device || !object_id) {
+    return res.status(400).json({ error: "device and object_id are required" });
+  }
+  const payload = {};
+  if (enabled !== undefined) payload.enabled = !!enabled;
+  if (on !== undefined) {
+    if (!HHMM_RE.test(on)) return res.status(400).json({ error: `'on' must be HH:MM, got '${on}'` });
+    payload.on = on;
+  }
+  if (off !== undefined) {
+    if (!HHMM_RE.test(off)) return res.status(400).json({ error: `'off' must be HH:MM, got '${off}'` });
+    payload.off = off;
+  }
+  if (days !== undefined) {
+    if (!DAYS_RE.test(days)) return res.status(400).json({ error: "'days' must be a 7-char string of 0/1" });
+    payload.days = days;
+  }
+  if (Object.keys(payload).length === 0) {
+    return res.status(400).json({ error: "at least one of enabled/on/off/days is required" });
+  }
+  const setTopic = `${MQTT_ROOT}/${device}/schedule/${object_id}/set`;
+  if (!mqttConnected) {
+    return res.status(503).json({ error: "MQTT broker not connected" });
+  }
+  client.publish(setTopic, JSON.stringify(payload), { qos: 0, retain: true }, (err) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ ok: true, topic: setTopic, payload });
+  });
 });
 
 app.post("/api/command", (req, res) => {
@@ -268,7 +373,15 @@ function broadcast(msg) {
 }
 
 wss.on("connection", (ws) => {
-  ws.send(JSON.stringify({ type: "full_state", state: serializeRegistry(), mqttConnected }));
+  ws.send(
+    JSON.stringify({
+      type: "full_state",
+      state: serializeRegistry(),
+      schedules: serializeSchedules(),
+      timeStatus,
+      mqttConnected,
+    })
+  );
 });
 
 server.listen(CONTROL_PORT, "0.0.0.0", () => {

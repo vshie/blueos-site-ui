@@ -73,40 +73,90 @@ blueos/<device>/status                          (birth/LWT: "online" / "offline"
 | Buzzer Beep | switch (momentary) | `blueos/relay/switch/buzzer_beep/state` | `ON` |
 | **RTC Sync Now** | switch (momentary) | `blueos/relay/switch/rtc_sync_now/state` | `ON` |
 | RTC Temperature | sensor | `blueos/relay/sensor/rtc_temperature/state` | read-only, °C |
+| RTC Epoch | sensor | `blueos/relay/sensor/rtc_epoch/state` | read-only, unix seconds — used by `site-stack`'s time-from-RTC sidecar |
 | WiFi Signal | sensor | `blueos/relay/sensor/wifi_signal/state` | read-only, dBm |
 | Uptime | sensor | `blueos/relay/sensor/uptime/state` | read-only, s |
 | Status (relay board) | binary_sensor | `blueos/relay/binary_sensor/status/state` | read-only |
 | Boot Button | binary_sensor | `blueos/relay/binary_sensor/boot_button/state` | read-only |
-| Firmware / IP / SSID / MAC | text_sensor | `blueos/relay/text_sensor/<name>/state` | read-only |
+| Firmware / IP / SSID / MAC / RTC datetime | **sensor** (ESPHome publishes `text_sensor` entities on the `sensor` MQTT domain, not `text_sensor`) | `blueos/relay/sensor/<name>/state` | read-only |
 | Device availability | — | `blueos/relay/status` | `online` / `offline` |
+| **Schedule set** (per relay) | — | `blueos/relay/schedule/relay_N/set` | JSON, retained — see below |
+| **Schedule state** (per relay, echoed) | — | `blueos/relay/schedule/relay_N/state` | JSON, retained — see below |
 
-## RTC / NTP time sync — what exists, what was added
+## Relay scheduling — MQTT schema
+
+Each relay (`relay_1`..`relay_6`) has an independent daily on/off schedule
+evaluated on the ESP against its own RTC clock (not the host's), so it keeps
+working even if the Pi/site-stack is down. Full design rationale lives in
+`BlueOS-HA-node/esphome/schedule.h`; summary:
+
+**Set a schedule** — publish retained JSON to `blueos/relay/schedule/relay_N/set`:
+
+```json
+{ "enabled": true, "on": "07:15", "off": "19:45", "days": "0111110" }
+```
+
+- `on`/`off` — `"HH:MM"` 24h local time (ESP's RTC-derived time). A window
+  that wraps midnight (e.g. `on: "22:00", off: "06:00"`) is supported.
+- `days` — 7-char string, index 0=Sunday .. 6=Saturday, `'1'`=active that day.
+- The message is retained so the broker replays it to the ESP on every
+  (re)connect/(re)subscribe — the schedule survives ESP reboots without any
+  flash writes (avoids flash wear from frequent edits).
+- Edge-triggered: the scheduler only *commands* the relay at the on/off
+  transition, so a manual override (`blueos/relay/switch/relay_N/command`)
+  made between edges is not immediately fought — it holds until the next
+  scheduled transition.
+
+**Read current schedule** — subscribe to `blueos/relay/schedule/relay_N/state`
+(same JSON shape, retained, echoed by the ESP whenever it applies a new
+schedule or reconnects).
+
+The control page exposes this schema through:
+
+- `GET /api/schedule` — all known relay schedules (from cached retained MQTT
+  state), keyed by `device` → `object_id`.
+- `POST /api/schedule` — body `{ "device": "relay", "object_id": "relay_1", "enabled": true, "on": "07:15", "off": "19:45", "days": "0111110" }` (any subset of `enabled`/`on`/`off`/`days`, merged onto the last known
+  schedule); publishes the retained `.../set` message. The UI's per-relay
+  "Schedule" editor (day-of-week buttons, on/off time pickers) calls this.
+- WebSocket `schedule_update` push whenever a `.../state` topic changes, so
+  all open browser tabs stay in sync.
+
+## RTC / NTP time sync — what exists
 
 The ESP has a DS3231 RTC (`ds1307` platform) and SNTP. On boot, and whenever
 SNTP acquires time, ESPHome automatically writes wall time into the DS3231
-(`on_time_sync: ds1307.write_time`). The YAML already had two **`button:`**
-entities for manual read/write (`RTC Read from DS3231`, `RTC Write from ESP
-time`) — but **ESPHome's MQTT integration has no `MQTTButtonComponent`**, so
-native `button:` entities are only reachable over the native API or
-`web_server`, never over MQTT.
+(`on_time_sync: ds1307.write_time`), and the RTC is also periodically
+re-read (`ds1307.update_interval: 6h`) to correct ESPHome's internal clock
+from the chip if they drift. The YAML has two **`button:`** entities for
+manual read/write (`RTC Read from DS3231`, `RTC Write from ESP time`) — but
+**ESPHome's MQTT integration has no `MQTTButtonComponent`**, so native
+`button:` entities are only reachable over the native API or `web_server`,
+never over MQTT.
 
-**Fix applied in this task:** added a third option, a **momentary template
-switch** (`rtc_sync_now`), because ESPHome's `switch:` domain *does* have MQTT
-support. Turning it `ON` writes the current ESP time to the DS3231 and it
-auto-resets to `OFF`. This is what the control page's "RTC Sync Now" card
-calls.
+Instead, a **momentary template switch** (`rtc_sync_now`) is exposed over
+MQTT — ESPHome's `switch:` domain *does* have MQTT support. Turning it `ON`
+writes the current ESP time (from SNTP, if it has synced) to the DS3231 and
+it auto-resets to `OFF`. This is what the control page's "RTC Sync Now" card
+calls, and it's the "sync now when internet is available" button called for
+in the product goal.
 
-- **File patched:** `../BlueOS-HA-node/esphome/blueos-relay.yaml` (in the
-  workstation repo, not this one) — see the `rtc_sync_now` switch next to
-  `buzzer_beep`.
-- **Action required on the physical ESP:** this only takes effect after an
-  OTA (or USB) reflash of `blueos-relay` — the currently-running firmware at
-  `192.168.1.166` does **not** yet expose `blueos/relay/switch/rtc_sync_now/*`.
-  Until reflashed, the control page will still show the "RTC Sync Now" card
-  (from `devices.seed.json`) but the command will have no effect on the
-  device (no error either — it's a fire-and-forget MQTT publish).
-- OTA: `esphome upload blueos-relay.yaml` (or via `blueos-site-esphome` once
-  that extension exists) using the `ota_password` secret already in the YAML.
+The Pi/host side of time sync (pulling `rtc_epoch` over MQTT to correct the
+host clock when there's no internet) is implemented in `blueos-site-stack`'s
+`time_from_rtc.py` sidecar — see that repo's README for details. This
+control page surfaces its status as the **"Time: …" pill** in the top bar
+(`ntp` / `esp-rtc` / `esp-rtc-stale` / `unknown`), sourced from
+`blueos/ext/site-stack/json` via `GET /api/health` (`timeStatus` field) and
+pushed live over the `time_status` WebSocket message.
+
+## Embedded Grafana trends
+
+The control page embeds the provisioned `blueos-esp-sensors` Grafana
+dashboard directly below the device cards (kiosk mode, dark theme, 30s
+auto-refresh) via an `<iframe>` pointed at
+`http://<host>:<GRAFANA_PORT>/d/blueos-esp-sensors?orgId=1&kiosk=tv`.
+`GF_SECURITY_ALLOW_EMBEDDING=true` is set in the Dockerfile so Grafana
+allows being framed from the control page's different port/origin. This is
+read-only history — all live control stays in the cards above it.
 
 ## Manual install on BlueOS (copy-paste)
 

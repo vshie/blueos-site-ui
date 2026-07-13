@@ -36,11 +36,16 @@ RUN chmod +x /blueos-entrypoint.sh \
 
 # Grafana defaults: anonymous Admin for LAN v0.1 (documented in README). Change
 # GF_AUTH_ANONYMOUS_ENABLED=false to require the default admin/admin login.
+# GF_SECURITY_ALLOW_EMBEDDING lets the control page (port 80) iframe the
+# provisioned dashboard from Grafana (port 3000) — different ports are
+# different origins, so Grafana's default X-Frame-Options/CSP would
+# otherwise block the embed.
 ENV GF_SERVER_HTTP_PORT=3000 \
     GF_PATHS_PROVISIONING=/etc/grafana/provisioning \
     GF_AUTH_ANONYMOUS_ENABLED=true \
     GF_AUTH_ANONYMOUS_ORG_ROLE=Admin \
     GF_AUTH_DISABLE_LOGIN_FORM=false \
+    GF_SECURITY_ALLOW_EMBEDDING=true \
     GF_ANALYTICS_REPORTING_ENABLED=false \
     GF_ANALYTICS_CHECK_FOR_UPDATES=false \
     MQTT_HOST=host.docker.internal \
@@ -51,7 +56,7 @@ ENV GF_SERVER_HTTP_PORT=3000 \
 
 EXPOSE 80/tcp 3000/tcp
 
-LABEL version="0.1.0"
+LABEL version="0.2.0"
 LABEL type="other"
 LABEL tags='["grafana","mqtt","esphome","control","relay","dashboard","home-automation"]'
 LABEL requirements="core >= 1.1"
