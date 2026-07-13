@@ -108,12 +108,15 @@ calls.
 - OTA: `esphome upload blueos-relay.yaml` (or via `blueos-site-esphome` once
   that extension exists) using the `ota_password` secret already in the YAML.
 
-## Install on BlueOS
+## Manual install on BlueOS (copy-paste)
 
-Requires `blueos-site-stack` (Mosquitto + InfluxDB 1.8 + Telegraf) already
-running so `:1883` and `:8086` are reachable on the host.
+**Prerequisite:** install **`blueos-site-stack`** first so MQTT `:1883` and
+InfluxDB `:8086` are on the BlueOS host.
 
-Open BlueOS → **Extensions** → **Installed** → **+** and fill:
+**Published image:** [`vshie/blueos-site-ui:main`](https://hub.docker.com/r/vshie/blueos-site-ui/tags)
+(multi-arch: `linux/arm/v7`, `linux/arm64`, `linux/amd64`).
+
+Open BlueOS → **Extensions** → **Installed** → **+** and fill exactly:
 
 | Field | Value |
 |-------|--------|
@@ -122,7 +125,7 @@ Open BlueOS → **Extensions** → **Installed** → **+** and fill:
 | **Docker image** | `vshie/blueos-site-ui` |
 | **Docker tag** | `main` |
 
-**Custom settings** — paste verbatim:
+**Custom settings** (permissions JSON) — paste verbatim into the settings box:
 
 ```json
 {
@@ -134,10 +137,14 @@ Open BlueOS → **Extensions** → **Installed** → **+** and fill:
     "ExtraHosts": ["host.docker.internal:host-gateway"],
     "PortBindings": {
       "80/tcp": [
-        { "HostPort": "" }
+        {
+          "HostPort": ""
+        }
       ],
       "3000/tcp": [
-        { "HostPort": "3000" }
+        {
+          "HostPort": "3000"
+        }
       ]
     },
     "Binds": [
@@ -147,12 +154,15 @@ Open BlueOS → **Extensions** → **Installed** → **+** and fill:
 }
 ```
 
-Then:
+After install:
 
-- **Control page** (primary HMI): the dynamic port assigned to `80/tcp`
-  (Extensions → “Open”), or `http://<blueos-ip>:<port>/`.
-- **Grafana**: `http://<blueos-ip>:3000` (fixed port, admin/admin by default,
-  anonymous **Admin** viewing also enabled for LAN v0.1 — see “Auth” below).
+| UI | URL |
+|----|-----|
+| **Control page** (primary HMI — relays, sensors, RTC sync) | Extensions → **Open** (dynamic host port for container `:80`) |
+| **Grafana** (graphs only) | `http://<blueos-ip>:3000` |
+
+Grafana default login: `admin` / `admin` (anonymous Admin also enabled for LAN
+v0.1 — see Auth below). Control page has no auth on LAN.
 
 ## Ports
 
