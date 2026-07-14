@@ -1,6 +1,6 @@
 {
   "name": "blueos-site-ui-control",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "description": "BlueOS site-ui control page — HA-style MQTT device/entity control (relays, RTC sync) served alongside Grafana.",
   "private": true,
   "main": "server.js",

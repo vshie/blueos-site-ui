@@ -161,6 +161,33 @@ auto-refresh) via an `<iframe>` pointed at
 allows being framed from the control page's different port/origin. This is
 read-only history — all live control stays in the cards above it.
 
+The dashboard has an **ESP board** variable (`topic_root`, e.g. `blueos/relay`)
+auto-populated from Influx topic tags. Pick the board when you have more than
+one. Relay history keeps stable `relay_N` series IDs; friendly names edited in
+Site Controls are applied as Grafana display-name overrides (history stays
+joined to the same channel).
+
+## Adding another ESP board (auto pipeline)
+
+1. **ESPHome Site** — copy/adapt a YAML (new `esphome.name`, unique
+   `mqtt.topic_prefix` like `blueos/pump`), set sensors/relays, run the wizard
+   for Wi‑Fi + broker secrets, then **flash / OTA**.
+2. **MQTT** — board publishes `blueos/<device>/…/state` (+ `/status`).
+3. **Site Controls** — discovers any device under `blueos/#` automatically
+   (registry keyed by device path). No per-device registration.
+4. **Telegraf → Influx** (`site-stack`) — already uses `+/sensor/…` and
+   `+/switch/+/state` wildcards for the common blueos-relay metrics. New
+   *metric names* beyond that list need a one-line Telegraf topic add.
+5. **Grafana** — select the new board in the **ESP board** dropdown (manual
+   once). Panels then graph that device’s history.
+
+## Relay friendly labels
+
+Site Controls lets you rename `relay_1`… on each card (✎). Labels persist via
+retained MQTT `blueos/<device>/config/labels` and a file on the Grafana volume.
+Firmware object IDs stay `relay_N`; only the display name changes — including
+historical Grafana series display for that channel.
+
 ## Manual install on BlueOS (copy-paste)
 
 **Prerequisite:** install **`blueos-site-stack`** first so MQTT `:1883` and

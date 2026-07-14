@@ -2,9 +2,9 @@
   "id": null,
   "uid": "blueos-esp-sensors",
   "title": "BlueOS ESP Sensors",
-  "description": "Auto-provisioned: WiFi RSSI, RTC temperature, relay history and device status for ESPHome nodes publishing under blueos/# via Telegraf -> InfluxDB 1.8 (esphome DB).",
+  "description": "Auto-provisioned: WiFi RSSI, RTC temperature, relay history and device online status for ESPHome nodes publishing under blueos/# via Telegraf -> InfluxDB 1.8 (esphome DB). Pick a device root below when you have more than one board.",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "editable": true,
   "timezone": "browser",
   "time": { "from": "now-6h", "to": "now" },
@@ -14,10 +14,17 @@
     "list": [
       {
         "name": "topic_root",
-        "label": "Device root",
-        "type": "textbox",
-        "query": "blueos/relay",
-        "current": { "text": "blueos/relay", "value": "blueos/relay" }
+        "label": "ESP board",
+        "type": "query",
+        "datasource": { "type": "influxdb", "uid": "esphome_influxdb" },
+        "query": "SHOW TAG VALUES FROM \"esphome_sensor\" WITH KEY = \"topic\"",
+        "regex": "/^(blueos\\/[^\\/]+)\\//",
+        "includeAll": false,
+        "multi": false,
+        "refresh": 2,
+        "sort": 1,
+        "current": { "text": "blueos/relay", "value": "blueos/relay" },
+        "options": []
       }
     ]
   },
@@ -35,7 +42,7 @@
       "targets": [
         {
           "datasource": { "type": "influxdb", "uid": "esphome_influxdb" },
-          "query": "SELECT \"value\" FROM \"esphome_sensor\" WHERE (\"topic\" =~ /^$topic_root\\/sensor\\/wifi_signal\\/state$/) AND $timeFilter",
+          "query": "SELECT \"value\" FROM \"esphome_sensor\" WHERE (\"topic\" = '$topic_root/sensor/wifi_signal/state') AND $timeFilter",
           "rawQuery": true,
           "resultFormat": "time_series",
           "alias": "RSSI"
@@ -55,7 +62,7 @@
       "targets": [
         {
           "datasource": { "type": "influxdb", "uid": "esphome_influxdb" },
-          "query": "SELECT \"value\" FROM \"esphome_sensor\" WHERE (\"topic\" =~ /^$topic_root\\/sensor\\/rtc_temperature\\/state$/) AND $timeFilter",
+          "query": "SELECT \"value\" FROM \"esphome_sensor\" WHERE (\"topic\" = '$topic_root/sensor/rtc_temperature/state') AND $timeFilter",
           "rawQuery": true,
           "resultFormat": "time_series",
           "alias": "RTC Temp"
@@ -65,6 +72,7 @@
     {
       "id": 3,
       "title": "Relay States (history)",
+      "description": "Series identity is the stable relay_N channel. Friendly names set in Site Controls appear as display names when available.",
       "type": "state-timeline",
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
       "datasource": { "type": "influxdb", "uid": "esphome_influxdb" },
@@ -89,16 +97,28 @@
     },
     {
       "id": 4,
-      "title": "Uptime (s)",
+      "title": "Uptime",
+      "description": "Board uptime from the ESP uptime sensor (seconds), shown as a human duration.",
       "type": "stat",
       "gridPos": { "h": 6, "w": 8, "x": 0, "y": 16 },
       "datasource": { "type": "influxdb", "uid": "esphome_influxdb" },
-      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "dtdurations",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
       "targets": [
         {
           "datasource": { "type": "influxdb", "uid": "esphome_influxdb" },
-          "query": "SELECT last(\"value\") FROM \"esphome_sensor\" WHERE (\"topic\" =~ /^$topic_root\\/sensor\\/uptime\\/state$/) AND $timeFilter",
+          "query": "SELECT last(\"value\") FROM \"esphome_sensor\" WHERE (\"topic\" = '$topic_root/sensor/uptime/state') AND $timeFilter",
           "rawQuery": true,
           "resultFormat": "time_series",
           "alias": "Uptime"
@@ -107,23 +127,36 @@
     },
     {
       "id": 5,
-      "title": "Device Status (birth/LWT)",
+      "title": "Device online",
+      "description": "Whether this board is currently connected to the site mailbox (online/offline from the device status topic).",
       "type": "stat",
       "gridPos": { "h": 6, "w": 8, "x": 8, "y": 16 },
       "datasource": { "type": "influxdb", "uid": "esphome_influxdb" },
       "fieldConfig": {
         "defaults": {
           "mappings": [
-            { "type": "value", "options": { "online": { "color": "green", "text": "ONLINE" }, "offline": { "color": "red", "text": "OFFLINE" } } }
-          ]
+            {
+              "type": "value",
+              "options": {
+                "online": { "color": "green", "text": "Online" },
+                "offline": { "color": "red", "text": "Offline" }
+              }
+            }
+          ],
+          "noValue": "No recent status"
         },
         "overrides": []
       },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "value" },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
       "targets": [
         {
           "datasource": { "type": "influxdb", "uid": "esphome_influxdb" },
-          "query": "SELECT last(\"value\") FROM \"esphome_status\" WHERE (\"topic\" =~ /^$topic_root\\/status$/) AND $timeFilter",
+          "query": "SELECT last(\"value\") FROM \"esphome_status\" WHERE (\"topic\" = '$topic_root/status')",
           "rawQuery": true,
           "resultFormat": "time_series",
           "alias": "Status"
@@ -141,7 +174,7 @@
       "targets": [
         {
           "datasource": { "type": "influxdb", "uid": "esphome_influxdb" },
-          "query": "SELECT last(\"value\") FROM \"esphome_sensor\" WHERE (\"topic\" =~ /^$topic_root\\/sensor\\/rtc_temperature\\/state$/) AND $timeFilter",
+          "query": "SELECT last(\"value\") FROM \"esphome_sensor\" WHERE (\"topic\" = '$topic_root/sensor/rtc_temperature/state') AND $timeFilter",
           "rawQuery": true,
           "resultFormat": "time_series",
           "alias": "RTC Temp"

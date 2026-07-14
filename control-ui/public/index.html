@@ -33,7 +33,7 @@
             </marker>
           </defs>
           <rect x="20" y="25" width="170" height="100" rx="14" fill="#e6f4f2" stroke="#0d7a6f" stroke-width="2"/>
-          <text x="105" y="58" text-anchor="middle" font-size="14" font-weight="700" fill="#14201c">Your ESP boards</text>
+          <text x="105" y="58" text-anchor="middle" font-size="14" font-weight="700" fill="#14201c">ESP Boards</text>
           <text x="105" y="82" text-anchor="middle" font-size="12" fill="#5a6b64">relays · sensors · clock</text>
           <rect x="55" y="96" width="24" height="12" rx="2" fill="#0d7a6f"/>
           <rect x="87" y="96" width="24" height="12" rx="2" fill="#0d7a6f"/>
@@ -59,15 +59,23 @@
           <text x="782" y="80" text-anchor="middle" font-size="13" font-weight="700" fill="#14201c">Site Stack</text>
         </svg>
       </div>
+      <div class="board-summary">
+        <h3>ESP Boards</h3>
+        <p class="board-summary-help">
+          Boards appear automatically when they publish under the site mailbox.
+          Add another in <strong>ESPHome Site</strong> (YAML → flash), then it shows up here and in history.
+        </p>
+        <ul id="esp-board-list" class="board-list"></ul>
+      </div>
       <ul class="howto">
         <li><strong>Switches</strong> — tap to turn a relay on or off right now (manual override).</li>
-        <li><strong>Schedule</strong> — set daily on/off times; the board’s clock runs it even if this page is closed.</li>
+        <li><strong>Daily schedule</strong> — enable an on-window; the board’s clock runs it even if this page is closed.</li>
         <li><strong>Graphs</strong> — past values from Site Stack history (not for flipping switches).</li>
       </ul>
     </section>
 
     <p id="empty-state" class="empty-state" hidden>
-      No boards found yet. Power the ESP32 on the same Wi‑Fi as the Pi.
+      No ESP boards found yet. Power an ESP32 on the same Wi‑Fi as the Pi.
       If it’s new, set it up under <strong>ESPHome Site</strong>, then come back —
       boards appear here automatically when they send messages.
     </p>

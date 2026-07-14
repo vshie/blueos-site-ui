@@ -5,6 +5,7 @@
   const timeStatusEl = document.getElementById("time-status");
   const grafanaLinkEl = document.getElementById("grafana-link");
   const grafanaFrameEl = document.getElementById("grafana-frame");
+  const boardListEl = document.getElementById("esp-board-list");
 
   // BlueOS serves us under /extensionv2/<name>/ — absolute "/api/…" hits core and 404s.
   function extBase() {
@@ -24,9 +25,11 @@
 
   let state = {};
   let schedules = {};
+  let labels = {};
 
   const DAY_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
   const DEFAULT_SCHEDULE = { enabled: false, on: "06:00", off: "18:00", days: "1111111" };
+  const RELAY_RE = /^relay_\d+$/;
 
   fetch(api("api/health"))
     .then((r) => r.json())
@@ -43,6 +46,14 @@
     .then((r) => r.json())
     .then((s) => {
       schedules = s || {};
+      render();
+    })
+    .catch(() => {});
+
+  fetch(api("api/labels"))
+    .then((r) => r.json())
+    .then((l) => {
+      labels = l || {};
       render();
     })
     .catch(() => {});
@@ -66,7 +77,7 @@
       timeStatusEl.className = "pill pill-unknown";
       return;
     }
-    const labels = {
+    const labelsMap = {
       ntp: "Clock: internet",
       "esp-rtc": "Clock: ESP board",
       "esp-rtc-ok": "Clock: ESP board",
@@ -74,7 +85,7 @@
       "esp-rtc-stale": "Clock: ESP stale",
       unknown: "Clock: unknown",
     };
-    timeStatusEl.textContent = labels[status.time_source] || `Clock: ${status.time_source}`;
+    timeStatusEl.textContent = labelsMap[status.time_source] || `Clock: ${status.time_source}`;
     if (status.time_source === "ntp" || status.time_source === "esp-rtc" || status.time_source === "esp-rtc-ok") {
       timeStatusEl.className = "pill pill-ok";
     } else if (status.time_source === "esp-rtc-stale" || status.time_source === "unknown") {
@@ -102,6 +113,12 @@
     return { display: raw, isOn: null };
   }
 
+  function relayLabel(deviceKey, objectId, fallbackName) {
+    const fromMap = labels[deviceKey] && labels[deviceKey][objectId];
+    if (fromMap) return fromMap;
+    return fallbackName || objectId.replace(/^relay_/, "Relay ").replace(/_/g, " ");
+  }
+
   function sendCommand(device, domain, object_id, payload, btnEl) {
     if (btnEl) btnEl.disabled = true;
     fetch(api("api/command"), {
@@ -109,26 +126,147 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ device, domain, object_id, payload }),
     })
+      .then((r) => {
+        if (!r.ok) throw new Error("command failed");
+        upsertEntity(device, domain, object_id, payload, Date.now());
+        render();
+      })
       .catch((e) => console.error("command failed", e))
       .finally(() => {
         if (btnEl) setTimeout(() => (btnEl.disabled = false), 400);
       });
   }
 
-  function renderEntity(deviceKey, ent) {
-    const wrap = document.createElement("div");
-    wrap.className = "entity-card";
+  function saveLabel(device, objectId, label) {
+    const trimmed = String(label || "").trim().slice(0, 64);
+    if (!trimmed) return;
+    labels[device] = labels[device] || {};
+    labels[device][objectId] = trimmed;
+    if (state[device]) {
+      const ent = state[device].entities.find((e) => e.object_id === objectId);
+      if (ent) ent.name = trimmed;
+    }
+    render();
+    fetch(api("api/labels"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ device, object_id: objectId, label: trimmed }),
+    }).catch((e) => console.error("label save failed", e));
+  }
 
+  function findEntity(deviceKey, domain, objectId) {
+    const dev = state[deviceKey];
+    if (!dev) return null;
+    return dev.entities.find((e) => e.domain === domain && e.object_id === objectId) || null;
+  }
+
+  function renderEditableName(deviceKey, ent) {
     const nameRow = document.createElement("div");
     nameRow.className = "entity-name";
+
+    const nameWrap = document.createElement("span");
+    nameWrap.className = "entity-name-edit";
+
     const nameSpan = document.createElement("span");
-    nameSpan.textContent = ent.name;
+    nameSpan.className = "entity-name-text";
+    nameSpan.textContent = RELAY_RE.test(ent.object_id)
+      ? relayLabel(deviceKey, ent.object_id, ent.name)
+      : ent.name;
+
+    if (RELAY_RE.test(ent.object_id)) {
+      const editBtn = document.createElement("button");
+      editBtn.type = "button";
+      editBtn.className = "name-edit-btn";
+      editBtn.title = "Rename this relay";
+      editBtn.setAttribute("aria-label", "Rename relay");
+      editBtn.textContent = "✎";
+      editBtn.onclick = () => {
+        const input = document.createElement("input");
+        input.type = "text";
+        input.className = "name-edit-input";
+        input.value = relayLabel(deviceKey, ent.object_id, ent.name);
+        input.maxLength = 64;
+        const commit = () => saveLabel(deviceKey, ent.object_id, input.value);
+        input.onkeydown = (ev) => {
+          if (ev.key === "Enter") {
+            ev.preventDefault();
+            commit();
+          } else if (ev.key === "Escape") {
+            render();
+          }
+        };
+        input.onblur = commit;
+        nameWrap.replaceChild(input, nameSpan);
+        editBtn.remove();
+        input.focus();
+        input.select();
+      };
+      nameWrap.appendChild(nameSpan);
+      nameWrap.appendChild(editBtn);
+    } else {
+      nameWrap.appendChild(nameSpan);
+    }
+
     const badge = document.createElement("span");
     badge.className = "domain-badge";
-    badge.textContent = ent.domain.replace("_", " ");
-    nameRow.appendChild(nameSpan);
+    if (ent.object_id === "rtc_sync_now") {
+      badge.textContent = "action";
+    } else {
+      badge.textContent = ent.domain.replace("_", " ");
+    }
+    nameRow.appendChild(nameWrap);
     nameRow.appendChild(badge);
-    wrap.appendChild(nameRow);
+    return nameRow;
+  }
+
+  function renderRtcSyncCard(deviceKey, ent) {
+    const wrap = document.createElement("div");
+    wrap.className = "entity-card entity-card-action";
+    wrap.appendChild(renderEditableName(deviceKey, ent));
+
+    const help = document.createElement("div");
+    help.className = "entity-help";
+    help.textContent = "Copy internet time from this board onto its backup clock chip.";
+    wrap.appendChild(help);
+
+    const btn = document.createElement("button");
+    btn.className = "action-btn";
+    btn.textContent = "Sync clock now";
+    btn.onclick = () => {
+      btn.classList.add("flash");
+      setTimeout(() => btn.classList.remove("flash"), 600);
+      sendCommand(deviceKey, ent.domain, ent.object_id, "ON", btn);
+    };
+    wrap.appendChild(btn);
+
+    const lastSyncEnt =
+      findEntity(deviceKey, "sensor", "rtc_last_sync") ||
+      findEntity(deviceKey, "text_sensor", "rtc_last_sync");
+    const timeEl = document.createElement("div");
+    timeEl.className = "entity-time";
+    if (lastSyncEnt && lastSyncEnt.state && lastSyncEnt.state !== "never" && lastSyncEnt.state !== "unknown") {
+      timeEl.textContent = `Last synced: ${lastSyncEnt.state}`;
+    } else if (ent.lastUpdate) {
+      timeEl.textContent = `Last synced: ${timeAgo(ent.lastUpdate)}`;
+    } else {
+      timeEl.textContent = "Last synced: never";
+    }
+    wrap.appendChild(timeEl);
+    return wrap;
+  }
+
+  function renderEntity(deviceKey, ent) {
+    if (ent.object_id === "rtc_sync_now") {
+      return renderRtcSyncCard(deviceKey, ent);
+    }
+    // Hide the raw last-sync sensor card; it is shown on the sync action card.
+    if (ent.object_id === "rtc_last_sync") {
+      return document.createDocumentFragment();
+    }
+
+    const wrap = document.createElement("div");
+    wrap.className = "entity-card";
+    wrap.appendChild(renderEditableName(deviceKey, ent));
 
     if (ent.controllable && ent.momentary) {
       const btn = document.createElement("button");
@@ -186,7 +324,18 @@
   }
 
   function sendSchedule(device, objectId, patch, formEl) {
+    // Optimistic update — schedule.enabled must stick even before MQTT echo.
+    schedules[device] = schedules[device] || {};
+    const prev = schedules[device][objectId] || { ...DEFAULT_SCHEDULE };
+    schedules[device][objectId] = {
+      ...prev,
+      ...patch,
+      device,
+      object_id: objectId,
+      lastUpdate: Date.now(),
+    };
     if (formEl) formEl.classList.add("saving");
+    render();
     fetch(api("api/schedule"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -205,26 +354,35 @@
 
     const nameEl = document.createElement("div");
     nameEl.className = "schedule-name";
-    nameEl.textContent = ent.name;
+    nameEl.textContent = relayLabel(deviceKey, ent.object_id, ent.name);
     row.appendChild(nameEl);
 
+    const enabledWrap = document.createElement("div");
+    enabledWrap.className = "schedule-enable-wrap";
     const enabledLabel = document.createElement("label");
     enabledLabel.className = "switch schedule-enable";
+    enabledLabel.title = "Use daily schedule (board clock)";
     const enabledInput = document.createElement("input");
     enabledInput.type = "checkbox";
     enabledInput.checked = !!sc.enabled;
-    enabledInput.title = "Schedule enabled";
+    enabledInput.setAttribute("aria-label", "Use daily schedule");
     enabledInput.onchange = () => sendSchedule(deviceKey, ent.object_id, { enabled: enabledInput.checked }, row);
     const enabledSlider = document.createElement("span");
     enabledSlider.className = "slider";
     enabledLabel.appendChild(enabledInput);
     enabledLabel.appendChild(enabledSlider);
-    row.appendChild(enabledLabel);
+    const enabledText = document.createElement("span");
+    enabledText.className = "schedule-enable-text";
+    enabledText.textContent = sc.enabled ? "Auto on during window" : "Use daily schedule";
+    enabledWrap.appendChild(enabledLabel);
+    enabledWrap.appendChild(enabledText);
+    row.appendChild(enabledWrap);
 
     const onInput = document.createElement("input");
     onInput.type = "time";
     onInput.className = "schedule-time";
     onInput.value = sc.on;
+    onInput.title = "Turn on at";
     onInput.onchange = () => sendSchedule(deviceKey, ent.object_id, { on: onInput.value }, row);
     row.appendChild(onInput);
 
@@ -237,6 +395,7 @@
     offInput.type = "time";
     offInput.className = "schedule-time";
     offInput.value = sc.off;
+    offInput.title = "Turn off at";
     offInput.onchange = () => sendSchedule(deviceKey, ent.object_id, { off: offInput.value }, row);
     row.appendChild(offInput);
 
@@ -260,14 +419,50 @@
     return row;
   }
 
+  function renderBoardList() {
+    if (!boardListEl) return;
+    const deviceKeys = Object.keys(state).sort();
+    boardListEl.innerHTML = "";
+    if (deviceKeys.length === 0) {
+      const li = document.createElement("li");
+      li.className = "board-list-empty";
+      li.textContent = "None yet — flash a board in ESPHome Site; it appears here when it connects.";
+      boardListEl.appendChild(li);
+      return;
+    }
+    for (const key of deviceKeys) {
+      const dev = state[key];
+      const li = document.createElement("li");
+      const link = document.createElement("a");
+      link.href = `#device-${CSS.escape ? CSS.escape(key) : key.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+      link.className = "board-list-link";
+      const dot = document.createElement("span");
+      dot.className = `status-dot ${dev.online === true ? "online" : dev.online === false ? "offline" : ""}`;
+      const name = document.createElement("span");
+      name.textContent = dev.displayName || dev.device;
+      const meta = document.createElement("span");
+      meta.className = "board-list-meta";
+      meta.textContent =
+        dev.online === true ? "online" : dev.online === false ? "offline" : "seen";
+      link.appendChild(dot);
+      link.appendChild(name);
+      link.appendChild(meta);
+      li.appendChild(link);
+      boardListEl.appendChild(li);
+    }
+  }
+
   function render() {
     const deviceKeys = Object.keys(state).sort();
     emptyStateEl.hidden = deviceKeys.length > 0;
     devicesEl.innerHTML = "";
+    renderBoardList();
+
     for (const key of deviceKeys) {
       const dev = state[key];
       const card = document.createElement("section");
       card.className = "device-card";
+      card.id = `device-${key.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
 
       const header = document.createElement("div");
       header.className = "device-header";
@@ -288,17 +483,21 @@
       const grid = document.createElement("div");
       grid.className = "entities-grid";
       for (const ent of dev.entities) {
-        grid.appendChild(renderEntity(dev.device, ent));
+        const node = renderEntity(dev.device, ent);
+        if (node) grid.appendChild(node);
       }
       card.appendChild(grid);
 
-      const scheduledSwitches = dev.entities.filter((e) => e.domain === "switch" && /^relay_\d+$/.test(e.object_id));
+      const scheduledSwitches = dev.entities.filter(
+        (e) => e.domain === "switch" && RELAY_RE.test(e.object_id)
+      );
       if (scheduledSwitches.length > 0) {
         const schedSection = document.createElement("div");
         schedSection.className = "schedule-section";
         const schedHeader = document.createElement("div");
         schedHeader.className = "schedule-section-header";
-        schedHeader.textContent = "Daily schedule — uses the board’s clock; manual switch flips still work until the next on/off time";
+        schedHeader.textContent =
+          "Daily on-window (board clock) — this switch enables the schedule, it does not power the relay right now";
         schedSection.appendChild(schedHeader);
         for (const ent of scheduledSwitches) {
           schedSection.appendChild(renderScheduleRow(dev.device, ent));
@@ -310,20 +509,37 @@
     }
   }
 
-  function upsertEntity(deviceKey, domain, object_id, newState) {
+  function upsertEntity(deviceKey, domain, object_id, newState, lastUpdate) {
     if (!state[deviceKey]) {
-      state[deviceKey] = { device: deviceKey, displayName: deviceKey, online: true, lastSeen: Date.now(), entities: [] };
+      state[deviceKey] = {
+        device: deviceKey,
+        displayName: deviceKey,
+        online: true,
+        lastSeen: Date.now(),
+        entities: [],
+      };
     }
     const dev = state[deviceKey];
-    dev.online = true;
+    if (dev.online === null || dev.online === undefined) dev.online = true;
     dev.lastSeen = Date.now();
     let ent = dev.entities.find((e) => e.domain === domain && e.object_id === object_id);
     if (!ent) {
-      ent = { domain, object_id, name: object_id, state: null, lastUpdate: null, controllable: false, momentary: false };
+      ent = {
+        domain,
+        object_id,
+        name: RELAY_RE.test(object_id)
+          ? relayLabel(deviceKey, object_id, object_id)
+          : object_id,
+        state: null,
+        lastUpdate: null,
+        controllable: ["switch", "light", "number", "select", "cover", "lock", "fan"].includes(domain),
+        momentary: /sync|beep|buzzer|restart|reset|press/i.test(object_id),
+      };
       dev.entities.push(ent);
     }
-    ent.state = newState;
-    ent.lastUpdate = Date.now();
+    if (newState !== undefined) ent.state = newState;
+    if (lastUpdate !== undefined) ent.lastUpdate = lastUpdate;
+    else ent.lastUpdate = Date.now();
   }
 
   function connectWs() {
@@ -335,22 +551,37 @@
     ws.onmessage = (evt) => {
       const msg = JSON.parse(evt.data);
       if (msg.type === "full_state") {
-        state = msg.state;
+        state = msg.state || {};
         if (msg.schedules) schedules = msg.schedules;
+        if (msg.labels) labels = msg.labels;
         setMqttStatus(msg.mqttConnected);
         if (msg.timeStatus) setTimeStatus(msg.timeStatus);
         render();
       } else if (msg.type === "entity_update") {
-        upsertEntity(msg.device, msg.domain, msg.object_id, msg.state);
+        upsertEntity(msg.device, msg.domain, msg.object_id, msg.state, msg.lastUpdate);
         render();
       } else if (msg.type === "device_status") {
-        if (state[msg.device]) state[msg.device].online = msg.online;
+        if (!state[msg.device]) {
+          state[msg.device] = {
+            device: msg.device,
+            displayName: msg.device,
+            online: msg.online,
+            lastSeen: Date.now(),
+            entities: [],
+          };
+        } else {
+          state[msg.device].online = msg.online;
+          state[msg.device].lastSeen = Date.now();
+        }
         render();
       } else if (msg.type === "mqtt_status") {
         setMqttStatus(msg.connected);
       } else if (msg.type === "schedule_update") {
         schedules[msg.device] = schedules[msg.device] || {};
         schedules[msg.device][msg.object_id] = msg.schedule;
+        render();
+      } else if (msg.type === "labels_update") {
+        labels[msg.device] = msg.labels || {};
         render();
       } else if (msg.type === "time_status") {
         setTimeStatus(msg.status);
@@ -376,7 +607,21 @@
     fetch(api("api/schedule"))
       .then((r) => r.json())
       .then((s) => {
-        schedules = s || {};
+        // Merge, don't wipe optimistic local edits with a stale empty body.
+        const incoming = s || {};
+        for (const [device, map] of Object.entries(incoming)) {
+          schedules[device] = schedules[device] || {};
+          for (const [objectId, sc] of Object.entries(map || {})) {
+            schedules[device][objectId] = sc;
+          }
+        }
+        render();
+      })
+      .catch(() => {});
+    fetch(api("api/labels"))
+      .then((r) => r.json())
+      .then((l) => {
+        labels = l || labels;
         render();
       })
       .catch(() => {});
