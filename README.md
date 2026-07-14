@@ -1,5 +1,12 @@
 # blueos-site-ui — Grafana + MQTT Device Control (HA-style)
 
+> **Deprecated.** Superseded by **Site Steward** ([`vshie/blueos-site-steward`](https://github.com/vshie/blueos-site-steward)).
+> Install that single extension instead — it merges this repo and
+> `blueos-site-stack` into one tabbed portal (Controls / System / Graphs)
+> that keeps the same Grafana dashboards, relay control page, and MQTT
+> schedule schema. This repo remains for reference; images stay pullable at
+> their last tags.
+
 A BlueOS extension with two things in one container:
 
 1. **Grafana** (provisioned) — trends/history only: WiFi RSSI, RTC temperature,
