@@ -300,7 +300,7 @@ app.get("/register_service", (req, res) => {
       "Turn relays on/off, set daily schedules, and watch trends from your ESP boards.",
     icon: "mdi-toggle-switch",
     company: "Community",
-    version: "0.3.0",
+    version: "0.3.2",
     webpage: "https://github.com/vshie/blueos-site-ui",
     api: "https://github.com/vshie/blueos-site-ui/blob/main/README.md",
     new_page: false,
@@ -381,7 +381,9 @@ app.post("/api/command", (req, res) => {
 });
 
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server, path: "/ws" });
+// Accept /ws and any path BlueOS may leave after stripping /extensionv2/... —
+// the proxy sometimes rewrites or drops the path on upgrade.
+const wss = new WebSocketServer({ server });
 
 function broadcast(msg) {
   const data = JSON.stringify(msg);

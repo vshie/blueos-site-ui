@@ -364,12 +364,27 @@
     ws.onerror = () => ws.close();
   }
 
+  // REST poll keeps the UI usable when WebSocket fails through the BlueOS proxy.
   function pollFallback() {
     fetch(api("api/state"))
       .then((r) => r.json())
       .then((s) => {
         state = s;
         render();
+      })
+      .catch(() => {});
+    fetch(api("api/schedule"))
+      .then((r) => r.json())
+      .then((s) => {
+        schedules = s || {};
+        render();
+      })
+      .catch(() => {});
+    fetch(api("api/health"))
+      .then((r) => r.json())
+      .then((h) => {
+        if (typeof h.mqttConnected === "boolean") setMqttStatus(h.mqttConnected);
+        if (h.timeStatus) setTimeStatus(h.timeStatus);
       })
       .catch(() => {});
   }
@@ -383,5 +398,6 @@
     .catch(() => {});
 
   connectWs();
-  setInterval(pollFallback, 15000);
+  pollFallback();
+  setInterval(pollFallback, 4000);
 })();
