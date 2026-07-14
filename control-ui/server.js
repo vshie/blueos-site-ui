@@ -395,6 +395,10 @@ patchGrafanaRelayAliases();
 
 const mqttUrl = `mqtt://${MQTT_HOST}:${MQTT_PORT}`;
 let mqttConnected = false;
+// Debounce "disconnected" WS pushes so brief broker reconnects don't flash the UI.
+// reconnectPeriod is 3s; hold past that before telling browsers MQTT is down.
+const MQTT_STATUS_DISCONNECT_HOLD_MS = 8000;
+let mqttDisconnectBroadcastTimer = null;
 const client = mqtt.connect(mqttUrl, {
   clientId: `blueos-site-ui-${Math.random().toString(16).slice(2, 8)}`,
   reconnectPeriod: 3000,
@@ -403,6 +407,10 @@ const client = mqtt.connect(mqttUrl, {
 
 client.on("connect", () => {
   mqttConnected = true;
+  if (mqttDisconnectBroadcastTimer) {
+    clearTimeout(mqttDisconnectBroadcastTimer);
+    mqttDisconnectBroadcastTimer = null;
+  }
   console.log(`[mqtt] connected to ${mqttUrl}, subscribing ${MQTT_ROOT}/#`);
   client.subscribe(`${MQTT_ROOT}/#`, { qos: 0 });
   // Re-publish retained labels so Telegraf/Grafana consumers (if any) stay warm.
@@ -418,7 +426,11 @@ client.on("reconnect", () => {
 
 client.on("close", () => {
   mqttConnected = false;
-  broadcast({ type: "mqtt_status", connected: false });
+  if (mqttDisconnectBroadcastTimer) return;
+  mqttDisconnectBroadcastTimer = setTimeout(() => {
+    mqttDisconnectBroadcastTimer = null;
+    if (!mqttConnected) broadcast({ type: "mqtt_status", connected: false });
+  }, MQTT_STATUS_DISCONNECT_HOLD_MS);
 });
 
 client.on("error", (err) => {
@@ -509,7 +521,7 @@ app.get("/register_service", (req, res) => {
       "Turn relays on/off, set daily schedules, and watch trends from your ESP boards.",
     icon: "mdi-toggle-switch",
     company: "Community",
-    version: "0.4.1",
+    version: "0.4.2",
     webpage: "https://github.com/vshie/blueos-site-ui",
     api: "https://github.com/vshie/blueos-site-ui/blob/main/README.md",
     new_page: false,

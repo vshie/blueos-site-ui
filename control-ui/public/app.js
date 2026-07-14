@@ -163,7 +163,14 @@
     })
     .catch(() => {});
 
-  function setMqttStatus(connected) {
+  // Mailbox = site-ui server ↔ Mosquitto broker — not browser↔BlueOS WebSocket.
+  // Hold "disconnected" so brief proxy flaps / MQTT reconnects don't flash the pill.
+  // Cutoff was immediate (WS onclose + mqtt close); now require sustained down time.
+  const MQTT_DISCONNECT_HOLD_MS = 8000;
+  let mqttDisconnectTimer = null;
+  let lastKnownMqttConnected = null; // null = unknown; true/false = last broker report
+
+  function paintMqttStatus(connected) {
     if (connected === true) {
       mqttStatusEl.textContent = "Mailbox: connected";
       mqttStatusEl.className = "pill pill-ok";
@@ -173,6 +180,31 @@
     } else {
       mqttStatusEl.textContent = "Mailbox: connecting…";
       mqttStatusEl.className = "pill pill-unknown";
+    }
+  }
+
+  function setMqttStatus(connected) {
+    if (connected === true) {
+      if (mqttDisconnectTimer) {
+        clearTimeout(mqttDisconnectTimer);
+        mqttDisconnectTimer = null;
+      }
+      lastKnownMqttConnected = true;
+      paintMqttStatus(true);
+      return;
+    }
+    if (connected === false) {
+      lastKnownMqttConnected = false;
+      if (mqttDisconnectTimer) return;
+      mqttDisconnectTimer = setTimeout(() => {
+        mqttDisconnectTimer = null;
+        if (lastKnownMqttConnected === false) paintMqttStatus(false);
+      }, MQTT_DISCONNECT_HOLD_MS);
+      return;
+    }
+    // "connecting…" only before we've heard from the broker at all
+    if (lastKnownMqttConnected === null && !mqttDisconnectTimer) {
+      paintMqttStatus(null);
     }
   }
 
@@ -657,7 +689,8 @@
     const proto = location.protocol === "https:" ? "wss" : "ws";
     const ws = new WebSocket(`${proto}://${location.host}${BASE}ws`);
 
-    ws.onopen = () => setMqttStatus(null);
+    // Do not map WS open/close onto Mailbox — BlueOS proxy flaps are unrelated to Mosquitto.
+    ws.onopen = () => {};
 
     ws.onmessage = (evt) => {
       const msg = JSON.parse(evt.data);
@@ -665,7 +698,7 @@
         state = msg.state || {};
         if (msg.schedules) schedules = msg.schedules;
         if (msg.labels) labels = msg.labels;
-        setMqttStatus(msg.mqttConnected);
+        if (typeof msg.mqttConnected === "boolean") setMqttStatus(msg.mqttConnected);
         if (msg.timeStatus) setTimeStatus(msg.timeStatus);
         requestRender();
       } else if (msg.type === "entity_update") {
@@ -700,7 +733,7 @@
     };
 
     ws.onclose = () => {
-      setMqttStatus(false);
+      // Keep last known broker status; /api/health poll + mqtt_status drive Mailbox.
       setTimeout(connectWs, 3000);
     };
     ws.onerror = () => ws.close();
