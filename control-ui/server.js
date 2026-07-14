@@ -509,7 +509,7 @@ app.get("/register_service", (req, res) => {
       "Turn relays on/off, set daily schedules, and watch trends from your ESP boards.",
     icon: "mdi-toggle-switch",
     company: "Community",
-    version: "0.4.0",
+    version: "0.4.1",
     webpage: "https://github.com/vshie/blueos-site-ui",
     api: "https://github.com/vshie/blueos-site-ui/blob/main/README.md",
     new_page: false,

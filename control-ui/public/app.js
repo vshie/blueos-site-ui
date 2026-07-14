@@ -27,9 +27,114 @@
   let schedules = {};
   let labels = {};
 
+  // Poll/WS updates call render(), which wipes devicesEl and closes native <input type="time">
+  // pickers (and mid-edit label fields). Defer destructive re-renders while the user is in
+  // a schedule row or renaming a relay.
+  let renderDeferred = false;
+  let scheduleEditLock = false;
+  let labelEditLock = false;
+  let timePickerLock = false;
+  let interactionGraceTimer = null;
+  let timePickerGraceTimer = null;
+  const INTERACTION_GRACE_MS = 400;
+  // Native time pickers often blur the <input> while the OS/chrome picker is open.
+  const TIME_PICKER_GRACE_MS = 1500;
+
   const DAY_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
   const DEFAULT_SCHEDULE = { enabled: false, on: "06:00", off: "18:00", days: "1111111" };
   const RELAY_RE = /^relay_\d+$/;
+
+  function isScheduleControl(el) {
+    return !!(el && el.closest && el.closest(".schedule-row, .schedule-section"));
+  }
+
+  function isLabelEditControl(el) {
+    return !!(el && el.classList && el.classList.contains("name-edit-input"));
+  }
+
+  function isTimeInput(el) {
+    return !!(el && el.matches && el.matches("input.schedule-time"));
+  }
+
+  function isInteractiveUiBusy() {
+    if (scheduleEditLock || labelEditLock || timePickerLock) return true;
+    const el = document.activeElement;
+    return isScheduleControl(el) || isLabelEditControl(el);
+  }
+
+  function requestRender() {
+    if (isInteractiveUiBusy()) {
+      renderDeferred = true;
+      return;
+    }
+    renderDeferred = false;
+    render();
+  }
+
+  function flushDeferredRenderSoon(graceMs) {
+    clearTimeout(interactionGraceTimer);
+    interactionGraceTimer = setTimeout(() => {
+      const el = document.activeElement;
+      scheduleEditLock = isScheduleControl(el);
+      labelEditLock = isLabelEditControl(el);
+      if (scheduleEditLock || labelEditLock || timePickerLock) return;
+      if (renderDeferred) {
+        renderDeferred = false;
+        render();
+      }
+    }, graceMs == null ? INTERACTION_GRACE_MS : graceMs);
+  }
+
+  devicesEl.addEventListener("focusin", (ev) => {
+    const t = ev.target;
+    if (isTimeInput(t)) {
+      timePickerLock = true;
+      scheduleEditLock = true;
+      clearTimeout(timePickerGraceTimer);
+      clearTimeout(interactionGraceTimer);
+    } else if (isScheduleControl(t)) {
+      scheduleEditLock = true;
+      clearTimeout(interactionGraceTimer);
+    }
+    if (isLabelEditControl(t)) {
+      labelEditLock = true;
+      clearTimeout(interactionGraceTimer);
+    }
+  });
+
+  devicesEl.addEventListener("focusout", (ev) => {
+    if (isTimeInput(ev.target)) {
+      // Keep lock while native picker may still be open after input blur.
+      clearTimeout(timePickerGraceTimer);
+      timePickerGraceTimer = setTimeout(() => {
+        timePickerLock = false;
+        flushDeferredRenderSoon(0);
+      }, TIME_PICKER_GRACE_MS);
+      return;
+    }
+    flushDeferredRenderSoon();
+  });
+
+  // Day toggles / enable switch: keep a short lock across clicks even if focus moves away.
+  devicesEl.addEventListener("pointerdown", (ev) => {
+    if (isScheduleControl(ev.target)) {
+      scheduleEditLock = true;
+      clearTimeout(interactionGraceTimer);
+    }
+  });
+
+  devicesEl.addEventListener("pointerup", () => {
+    flushDeferredRenderSoon();
+  });
+
+  // Selecting a time commits the value — release the picker lock promptly.
+  devicesEl.addEventListener("change", (ev) => {
+    if (isTimeInput(ev.target)) {
+      clearTimeout(timePickerGraceTimer);
+      timePickerLock = false;
+      flushDeferredRenderSoon();
+    }
+  });
 
   fetch(api("api/health"))
     .then((r) => r.json())
@@ -46,7 +151,7 @@
     .then((r) => r.json())
     .then((s) => {
       schedules = s || {};
-      render();
+      requestRender();
     })
     .catch(() => {});
 
@@ -54,7 +159,7 @@
     .then((r) => r.json())
     .then((l) => {
       labels = l || {};
-      render();
+      requestRender();
     })
     .catch(() => {});
 
@@ -129,7 +234,7 @@
       .then((r) => {
         if (!r.ok) throw new Error("command failed");
         upsertEntity(device, domain, object_id, payload, Date.now());
-        render();
+        requestRender();
       })
       .catch((e) => console.error("command failed", e))
       .finally(() => {
@@ -146,6 +251,8 @@
       const ent = state[device].entities.find((e) => e.object_id === objectId);
       if (ent) ent.name = trimmed;
     }
+    labelEditLock = false;
+    renderDeferred = false;
     render();
     fetch(api("api/labels"), {
       method: "POST",
@@ -192,6 +299,8 @@
             ev.preventDefault();
             commit();
           } else if (ev.key === "Escape") {
+            labelEditLock = false;
+            renderDeferred = false;
             render();
           }
         };
@@ -335,7 +444,9 @@
       lastUpdate: Date.now(),
     };
     if (formEl) formEl.classList.add("saving");
-    render();
+    // Prefer requestRender so an open time picker / mid-click day toggle is not destroyed.
+    // Local controls already reflect the optimistic patch.
+    requestRender();
     fetch(api("api/schedule"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -556,10 +667,10 @@
         if (msg.labels) labels = msg.labels;
         setMqttStatus(msg.mqttConnected);
         if (msg.timeStatus) setTimeStatus(msg.timeStatus);
-        render();
+        requestRender();
       } else if (msg.type === "entity_update") {
         upsertEntity(msg.device, msg.domain, msg.object_id, msg.state, msg.lastUpdate);
-        render();
+        requestRender();
       } else if (msg.type === "device_status") {
         if (!state[msg.device]) {
           state[msg.device] = {
@@ -573,16 +684,16 @@
           state[msg.device].online = msg.online;
           state[msg.device].lastSeen = Date.now();
         }
-        render();
+        requestRender();
       } else if (msg.type === "mqtt_status") {
         setMqttStatus(msg.connected);
       } else if (msg.type === "schedule_update") {
         schedules[msg.device] = schedules[msg.device] || {};
         schedules[msg.device][msg.object_id] = msg.schedule;
-        render();
+        requestRender();
       } else if (msg.type === "labels_update") {
         labels[msg.device] = msg.labels || {};
-        render();
+        requestRender();
       } else if (msg.type === "time_status") {
         setTimeStatus(msg.status);
       }
@@ -601,7 +712,7 @@
       .then((r) => r.json())
       .then((s) => {
         state = s;
-        render();
+        requestRender();
       })
       .catch(() => {});
     fetch(api("api/schedule"))
@@ -615,14 +726,14 @@
             schedules[device][objectId] = sc;
           }
         }
-        render();
+        requestRender();
       })
       .catch(() => {});
     fetch(api("api/labels"))
       .then((r) => r.json())
       .then((l) => {
         labels = l || labels;
-        render();
+        requestRender();
       })
       .catch(() => {});
     fetch(api("api/health"))
@@ -638,7 +749,7 @@
     .then((r) => r.json())
     .then((s) => {
       state = s;
-      render();
+      requestRender();
     })
     .catch(() => {});
 
